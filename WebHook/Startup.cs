@@ -12,34 +12,35 @@ namespace Webhook.Listener.Function
     {
         public override void Configure(IFunctionsHostBuilder builder)
         {
-            //// Load configuration from environment variables
-            //var config = new ConfigurationBuilder().AddEnvironmentVariables().Build();
-
-            //// Bind configuration to AppConfig static class
-            //EnvironmentVariables.ServiceBusTopic = Environment.GetEnvironmentVariable("ServiceBus:Topic");
-            //EnvironmentVariables.ServiceBusTopicSubscription = Environment.GetEnvironmentVariable("ServiceBus:TopicSubscription");
-
+            var context = builder.GetContext();
+            var config = new ConfigurationBuilder()
+                                    .SetBasePath(context.ApplicationRootPath)
+                                    .AddJsonFile("local.settings.json", optional: true, reloadOnChange: true)
+                                    .AddEnvironmentVariables()
+                                    .Build();
+            builder.Services.AddSingleton<IConfiguration>(config);
+            
             builder.Services.AddSingleton<EnvironmentVariables>(provider =>
+            {
+                var config = provider.GetService<IConfiguration>();
+            
+                // Bind configuration/environment variables
+                return new()
                 {
-                    var config = provider.GetService<IConfiguration>();
-
-                    // Bind configuration/environment variables
-                    return new()
-                    {
-                        ServiceBusTopic = Environment.GetEnvironmentVariable("ServiceBus:Topic"),
-                        ServiceBusTopicSubscription = Environment.GetEnvironmentVariable("ServiceBus:TopicSubscription")
-                    };
-                });
+                    ServiceBusTopic = config.GetValue<string>("ServiceBus:Topic"),
+                    ServiceBusTopicSubscription = config.GetValue<string>("ServiceBus:TopicSubscription")
+                };
+            });
 
             // Register Application services
             builder.Services.AddScoped<IPublisherService, PublisherService>();
 
             // Register ServiceBus instances
-            _ = bool.TryParse(Environment.GetEnvironmentVariable("ServiceBus:UseManagedIdentity"), out bool useManagedIdentity);
+            _ = bool.TryParse(config["ServiceBus:UseManagedIdentity"], out bool useManagedIdentity);
             builder.Services.AddServiceBusClientAndSender(useManagedIdentity,
-                                                        Environment.GetEnvironmentVariable("ServiceBus:Topic"),
-                                                        Environment.GetEnvironmentVariable("ServiceBus:Name"),
-                                                        Environment.GetEnvironmentVariable("ServiceBus:ConnectionString"));
+                                                        config["ServiceBus:Topic"],
+                                                        config["ServiceBus:Name"],
+                                                        config["ServiceBus:ConnectionString"]);
         }
     }
 }
