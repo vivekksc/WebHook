@@ -9,13 +9,26 @@ namespace Webhook.DataProcessor.Function
     {
         public override void Configure(IFunctionsHostBuilder builder)
         {
-            // Load configuration from environment variables
-            var config = new ConfigurationBuilder().AddEnvironmentVariables().Build();
-
-            // Bind configuration to AppConfig static class
-            EnvironmentVariables.DatabricksInstance = config.GetValue<string>("Databricks:Instance");
-            EnvironmentVariables.DatabricksAccessToken = config.GetValue<string>("Databricks:AccessToken");
-            EnvironmentVariables.DatabricksWorkflowJobId_Ingest = config.GetValue<string>("Databricks:WorkflowJobId_Ingest");
+            var context = builder.GetContext();
+            var config = new ConfigurationBuilder()
+                                    .SetBasePath(context.ApplicationRootPath)
+                                    .AddJsonFile("local.settings.json", optional: true, reloadOnChange: true)
+                                    .AddEnvironmentVariables()
+                                    .Build();
+            builder.Services.AddSingleton<IConfiguration>(config);
+        
+            builder.Services.AddSingleton<EnvironmentVariables>(provider =>
+            {
+                var config = provider.GetService<IConfiguration>();
+        
+                // Bind configuration/environment variables
+                return new()
+                {
+                    DatabricksInstance = config.GetValue<string>("Databricks:Instance"),
+                    DatabricksAccessToken = config.GetValue<string>("Databricks:AccessToken"),
+                    DatabricksWorkflowJobId_Ingest = config.GetValue<string>("Databricks:WorkflowJobId_Ingest")
+                };
+            });
         }
     }
 }
