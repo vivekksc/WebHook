@@ -1,0 +1,37 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.11.35327.3
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WebHook.Listener.Function", "WebHook\WebHook.Listener.Function.csproj", "{E749CD51-5DA5-42B3-A2AF-69CCB57A6B41}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Webhook.Utilities", "Webhook.Utilities\Webhook.Utilities.csproj", "{27600178-5F2E-4C31-98B5-44FA927DDAA5}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Webhook.DataProcessor.Function", "Webhook.DataProcessor.Function\Webhook.DataProcessor.Function.csproj", "{4ADB8BA2-1A53-4CFB-86C1-48371377990B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{E749CD51-5DA5-42B3-A2AF-69CCB57A6B41}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E749CD51-5DA5-42B3-A2AF-69CCB57A6B41}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E749CD51-5DA5-42B3-A2AF-69CCB57A6B41}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E749CD51-5DA5-42B3-A2AF-69CCB57A6B41}.Release|Any CPU.Build.0 = Release|Any CPU
+		{27600178-5F2E-4C31-98B5-44FA927DDAA5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{27600178-5F2E-4C31-98B5-44FA927DDAA5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{27600178-5F2E-4C31-98B5-44FA927DDAA5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{27600178-5F2E-4C31-98B5-44FA927DDAA5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4ADB8BA2-1A53-4CFB-86C1-48371377990B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4ADB8BA2-1A53-4CFB-86C1-48371377990B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4ADB8BA2-1A53-4CFB-86C1-48371377990B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4ADB8BA2-1A53-4CFB-86C1-48371377990B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {D31DAF5D-60A8-4D30-8456-AA7C2D54135B}
+	EndGlobalSection
+EndGlobal
