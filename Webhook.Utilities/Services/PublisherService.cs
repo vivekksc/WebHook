@@ -15,8 +15,8 @@ namespace Webhook.Utilities.Services
             // Prepare message
             ServiceBusMessage message = new(payload)
             {
-                SessionId = payloadMetadata.EntityId.ToString(),
-                Subject = payloadMetadata.Entity
+                SessionId = $"{payloadMetadata.Entity}-{payloadMetadata.EntityId}",
+                Subject = payloadMetadata.Entity.ToLower()
             };
             message.ApplicationProperties["CreatedAt"] = payloadMetadata.CreatedAt;
             message.ApplicationProperties["PublishedAt"] = payloadMetadata.PublishedAt;

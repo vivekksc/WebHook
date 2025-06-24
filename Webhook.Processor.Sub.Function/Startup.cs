@@ -3,8 +3,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Webhook.Utilities.Utils;
 
-[assembly: FunctionsStartup(typeof(Webhook.DataProcessor.Function.Startup))]
-namespace Webhook.DataProcessor.Function
+[assembly: FunctionsStartup(typeof(Webhook.Processor.Function.Startup))]
+namespace Webhook.Processor.Function
 {
     public class Startup : FunctionsStartup
     {
@@ -17,7 +17,7 @@ namespace Webhook.DataProcessor.Function
                                     .AddEnvironmentVariables()
                                     .Build();
             builder.Services.AddSingleton<IConfiguration>(config);
-        
+
             builder.Services.AddSingleton<EnvironmentVariables>(provider =>
             {
                 var config = provider.GetService<IConfiguration>();
@@ -25,11 +25,20 @@ namespace Webhook.DataProcessor.Function
                 // Bind configuration/environment variables
                 return new()
                 {
-                    DatabricksInstance = config.GetValue<string>("Databricks:Instance"),
-                    DatabricksAccessToken = config.GetValue<string>("Databricks:AccessToken"),
-                    DatabricksWorkflowJobId_Ingest = config.GetValue<string>("Databricks:WorkflowJobId_Ingest")
+                    ServiceBusTopicSubscription = config["ServiceBus:TopicSubscription"],
+                    DatabricksInstance = config["Databricks:Instance"],
+                    DatabricksAccessToken = config["Databricks:AccessToken"],
+                    DatabricksWorkflowJobId_Ingest = config["Databricks:WorkflowJobId_Ingest"]
                 };
             });
+
+            // Register ServiceBus instances
+            _ = bool.TryParse(config["ServiceBus:UseManagedIdentity"], out bool useManagedIdentity);
+            builder.Services.AddServiceBusClientAndReceiver(useManagedIdentity,
+                                                        config["ServiceBus:Topic"],
+                                                        config["ServiceBus:TopicSubscription"],
+                                                        config["ServiceBus:Name"],
+                                                        config["ServiceBus:ConnectionString"]);
         }
     }
 }

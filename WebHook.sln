@@ -7,7 +7,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WebHook.Listener.Function",
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Webhook.Utilities", "Webhook.Utilities\Webhook.Utilities.csproj", "{27600178-5F2E-4C31-98B5-44FA927DDAA5}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Webhook.DataProcessor.Function", "Webhook.DataProcessor.Function\Webhook.DataProcessor.Function.csproj", "{4ADB8BA2-1A53-4CFB-86C1-48371377990B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Webhook.Processor.Function", "Webhook.Processor.Function\Webhook.Processor.Function.csproj", "{9B1979FB-37B0-459B-969A-C78CC93E0FB3}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -23,10 +23,10 @@ Global
 		{27600178-5F2E-4C31-98B5-44FA927DDAA5}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{27600178-5F2E-4C31-98B5-44FA927DDAA5}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{27600178-5F2E-4C31-98B5-44FA927DDAA5}.Release|Any CPU.Build.0 = Release|Any CPU
-		{4ADB8BA2-1A53-4CFB-86C1-48371377990B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{4ADB8BA2-1A53-4CFB-86C1-48371377990B}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{4ADB8BA2-1A53-4CFB-86C1-48371377990B}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{4ADB8BA2-1A53-4CFB-86C1-48371377990B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9B1979FB-37B0-459B-969A-C78CC93E0FB3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9B1979FB-37B0-459B-969A-C78CC93E0FB3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9B1979FB-37B0-459B-969A-C78CC93E0FB3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9B1979FB-37B0-459B-969A-C78CC93E0FB3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

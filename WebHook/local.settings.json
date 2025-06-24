@@ -6,9 +6,9 @@
     "FUNCTIONS_WORKER_RUNTIME": "dotnet"
   },
   "ServiceBus": {
-    "Name": "",
-    "Topic": "",
-    "ConnectionString": "",
-    "UseManagedIdentity": true
+    "Name": "wv-sb1",
+    "Topic": "sct-wv-events",
+    "ConnectionString": "Endpoint=sb://wv-sb1.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SQR6QFS/ultipq7hY0WjA+A5wkwNGJtXd+ASbIh55QU=",
+    "UseManagedIdentity": false
   }
 }

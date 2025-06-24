@@ -9,37 +9,6 @@ namespace Webhook.Utilities.Utils
 {
     public static class DIExtensions
     {
-        //public static IServiceCollection AddWebhookListenerServices(this IServiceCollection services, IConfiguration config)
-        //{
-
-        //    services.AddSingleton<EnvironmentVariables>(provider =>
-        //    {
-        //        var config = provider.GetService<IConfiguration>();
-
-        //        // Bind configuration/environment variables
-        //        return new()
-        //        {
-        //            ServiceBusTopic = config.GetValue<string>("ServiceBus:Topic"),
-        //            ServiceBusTopicSubscription = config.GetValue<string>("ServiceBus:TopicSubscription")
-        //        };
-        //    });
-            
-        //    // Register Application services
-        //    services.AddScoped<IPublisherService, PublisherService>();
-
-        //    // Register ServiceBus instances
-        //    //_ = bool.TryParse(Environment.GetEnvironmentVariable("ServiceBus:UseManagedIdentity"), out bool useManagedIdentity);
-        //    //services.AddServiceBusClientAndSender(useManagedIdentity,
-        //    //                                        Environment.GetEnvironmentVariable("ServiceBus:Topic"),
-        //    //                                        Environment.GetEnvironmentVariable("ServiceBus:Name"),
-        //    //                                        Environment.GetEnvironmentVariable("ServiceBus:ConnectionString"));
-        //    services.AddServiceBusClientAndSender(config.GetValue<bool>("ServiceBus:UseManagedIdentity"),
-        //                                            config.GetValue<string>("ServiceBus:Topic"),
-        //                                            config.GetValue<string>("ServiceBus:Name"),
-        //                                            config.GetValue<string>("ServiceBus:ConnectionString"));
-        //    return services;
-        //}
-
         public static IServiceCollection AddServiceBusClientAndSender(this IServiceCollection services,
                                                                   bool useManagedIdentity,
                                                                   string topicName,
@@ -66,6 +35,80 @@ namespace Webhook.Utilities.Utils
                         .CreateSender(topicName)
                 )
                 .WithName(topicName);
+            });
+
+            return services;
+        }
+
+        public static IServiceCollection AddServiceBusClientAndReceiver(this IServiceCollection services,
+                                                                  bool useManagedIdentity,
+                                                                  string topicName,
+                                                                  string subscriptionName,
+                                                                  string serviceBusName,
+                                                                  string serviceBusConnectionString
+                                                                  )
+        {
+            services.AddAzureClients(builder =>
+            {
+                if (useManagedIdentity)
+                {
+                    // Adding using managed identity
+                    builder.AddServiceBusClientWithNamespace($"{serviceBusName}.servicebus.windows.net");
+                }
+                else
+                {
+                    // Adding using connection string
+                    builder.AddServiceBusClient(serviceBusConnectionString);
+                }
+
+                ServiceBusReceiverOptions receiverOptions = new()
+                {
+                    PrefetchCount = 20
+                };
+                builder.AddClient<ServiceBusReceiver, ServiceBusClientOptions>((_, _, provider) =>
+                    provider
+                        .GetRequiredService<ServiceBusClient>()
+                        .CreateReceiver(topicName, subscriptionName, receiverOptions)
+                )
+                .WithName(subscriptionName);
+            });
+
+            return services;
+        }
+
+        public static IServiceCollection AddServiceBusClientAndProcessor(this IServiceCollection services,
+                                                                  bool useManagedIdentity,
+                                                                  string topicName,
+                                                                  string subscriptionName,
+                                                                  string serviceBusName,
+                                                                  string serviceBusConnectionString
+                                                                  )
+        {
+            services.AddAzureClients(builder =>
+            {
+                if (useManagedIdentity)
+                {
+                    // Adding using managed identity
+                    builder.AddServiceBusClientWithNamespace($"{serviceBusName}.servicebus.windows.net");
+                }
+                else
+                {
+                    // Adding using connection string
+                    builder.AddServiceBusClient(serviceBusConnectionString);
+                }
+
+                ServiceBusSessionProcessorOptions processorOptions = new()
+                {
+                    AutoCompleteMessages = true,
+                    MaxConcurrentSessions = 20,
+                    MaxConcurrentCallsPerSession = 1
+                };
+                builder.AddClient<ServiceBusSessionProcessor, ServiceBusClientOptions>((_, _, provider) =>
+                    provider
+                        .GetRequiredService<ServiceBusClient>()
+                        .CreateSessionProcessor(topicName, subscriptionName, processorOptions)
+                )
+                .WithName(subscriptionName);
             });
 
             return services;
