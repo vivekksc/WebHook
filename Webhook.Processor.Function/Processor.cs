@@ -1,153 +1,143 @@
 using Azure.Messaging.ServiceBus;
-using Microsoft.Azure.Amqp.Framing;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Extensions.Azure;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
+using Webhook.Utilities.Contracts;
 using Webhook.Utilities.Utils;
+using ExecutionContext = Microsoft.Azure.WebJobs.ExecutionContext;
 
 namespace Webhook.Processor.Function
 {
     public class Processor(
-        //IProcessorService processorService,
-        IAzureClientFactory<ServiceBusReceiver> azClientFactory,
-        IHttpClientFactory httpClientFactory,
+        IAzureClientFactory<ServiceBusClient> azSBClientFactory,
+        IProcessorService processorService,
         EnvironmentVariables config
         )
     {
         private readonly EnvironmentVariables _config = config;
-        //private readonly IProcessorService _processorService = processorService;
-        private readonly ServiceBusReceiver _receiver = azClientFactory.CreateClient(config.ServiceBusTopicSubscription);
-        private readonly HttpClient httpClient = httpClientFactory.CreateClient();
+        private readonly ServiceBusClient _sbClient = azSBClientFactory.CreateClient(config.ServiceBusName);
+        private readonly IProcessorService _processorService = processorService;
 
-        //[Disable]
-        //[FunctionName("Processor")]
-        //public async Task Run([TimerTrigger("*/5 * * * * *")] TimerInfo myTimer)
-        //{
-        //    try
-        //    {
-        //        //// Handle the ProcessSessionMessageAsync event
-        //        //_processor.ProcessMessageAsync += async args =>
-        //        //{
-        //        //    try
-        //        //    {
-        //        //        // Process the message
-        //        //        string eventPayload = Encoding.UTF8.GetString(args.Message.Body.ToArray());
-
-        //        //        var payload = new
-        //        //        {
-        //        //            job_id = _config.DatabricksWorkflowJobId_Ingest,
-        //        //            job_parameters = new
-        //        //            {
-        //        //                payload = CompressAndBase64Encode(eventPayload)
-        //        //            }
-        //        //        };
-
-        //        //        var jsonPayload = JsonConvert.SerializeObject(payload);
-        //        //        var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
-
-        //        //        httpClient.DefaultRequestHeaders.Clear();
-        //        //        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _config.DatabricksAccessToken);
-
-        //        //        HttpResponseMessage response = await httpClient.PostAsync($"https://{_config.DatabricksInstance}/api/2.1/jobs/run-now", content);
-        //        //        //string responseContent = await response.Content.ReadAsStringAsync();
-
-        //        //        // Complete the message
-        //        //        await args.CompleteMessageAsync(args.Message);
-        //        //    }
-        //        //    catch (Exception ex)
-        //        //    {
-        //        //        // Abandon the message if there's an error
-        //        //        //await args.AbandonMessageAsync(args.Message);
-        //        //    }
-        //        //};
-
-        //        //// Handle the ProcessErrorAsync event
-        //        //_processor.ProcessErrorAsync += async args =>
-        //        //{
-        //        //    await Task.CompletedTask;
-        //        //};
-
-        //        // Start processing
-        //        await _processorService.StartProcessingAsync();
-
-        //        // Wait for a short time to ensure messages are processed
-        //        await Task.Delay(TimeSpan.FromSeconds(10));
-
-        //        // Stop processing
-        //        await _processorService.StopProcessingAsync();
-        //    }
-        //    catch (Exception ex)
-        //    {
-
-        //    }
-
-        //}
-
-        [FunctionName("ProcessorV2")]
-        public async Task RunV2([TimerTrigger("*/5 * * * * *")] TimerInfo myTimer)
+        [FunctionName("MDSProcessor-Update")]
+        public async Task ProcessUpdatesAsync([TimerTrigger("%ProcessorRunScheduleExpression%")] TimerInfo myTimer,
+                                   ExecutionContext funcContext,
+                                   ILogger logger)
         {
-            var messages = await _receiver.ReceiveMessagesAsync(20);
-            foreach (var message in messages)
-            {
-                try
-                {
-                    // Process the message
-                    string eventPayload = Encoding.UTF8.GetString(message.Body.ToArray());
-
-                    var payload = new
-                    {
-                        job_id = _config.DatabricksWorkflowJobId_Ingest,
-                        job_parameters = new
-                        {
-                            payload = CompressAndBase64Encode(eventPayload)
-                        }
-                    };
-
-                    var jsonPayload = JsonConvert.SerializeObject(payload);
-                    var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
-
-                    httpClient.DefaultRequestHeaders.Clear();
-                    httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _config.DatabricksAccessToken);
-
-                    HttpResponseMessage response = await httpClient.PostAsync($"https://{_config.DatabricksInstance}/api/2.1/jobs/run-now", content);
-
-                    //Complete Message
-                    await _receiver.CompleteMessageAsync(message).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    Task.Delay()
-                }
-            }
+            await ProcessMessages(logger,
+                                  _config.ServiceBusTopic_MDS,
+                                  _config.ServiceBusTopicSubscription_Update,
+                                  funcContext.FunctionName);
         }
 
-        private static string CompressAndBase64Encode(string jsonString)
+        [FunctionName("MDSProcessor-Comment")]
+        public async Task ProcessCommentsAsync([TimerTrigger("%ProcessorRunScheduleExpression%")] TimerInfo myTimer,
+                                   ExecutionContext funcContext,
+                                   ILogger logger)
         {
-            // Convert the JSON string to bytes
-            byte[] jsonBytes = Encoding.UTF8.GetBytes(jsonString);
+            await ProcessMessages(logger,
+                                  _config.ServiceBusTopic_MDS,
+                                  _config.ServiceBusTopicSubscription_Comment,
+                                  funcContext.FunctionName);
+        }
 
-            // Compress the bytes using Gzip
-            using (var outputStream = new MemoryStream())
+        [FunctionName("MDSProcessor-Kudos")]
+        public async Task ProcessKudosAsync([TimerTrigger("%ProcessorRunScheduleExpression%")] TimerInfo myTimer,
+                                   ExecutionContext funcContext,
+                                   ILogger logger)
+        {
+            await ProcessMessages(logger,
+                                  _config.ServiceBusTopic_MDS,
+                                  _config.ServiceBusTopicSubscription_Kudos,
+                                  funcContext.FunctionName);
+        }
+
+        [FunctionName("MDSProcessor-Event")]
+        public async Task ProcessEventAsync([TimerTrigger("%ProcessorRunScheduleExpression%")] TimerInfo myTimer,
+                                   ExecutionContext funcContext,
+                                   ILogger logger)
+        {
+            await ProcessMessages(logger,
+                                  _config.ServiceBusTopic_MDS,
+                                  _config.ServiceBusTopicSubscription_Event,
+                                  funcContext.FunctionName);
+        }
+
+        [FunctionName("MDSProcessor-Bookmark")]
+        public async Task ProcessBookmarkAsync([TimerTrigger("%ProcessorRunScheduleExpression%")] TimerInfo myTimer,
+                                   ExecutionContext funcContext,
+                                   ILogger logger)
+        {
+            await ProcessMessages(logger,
+                                  _config.ServiceBusTopic_MDS,
+                                  _config.ServiceBusTopicSubscription_Bookmark,
+                                  funcContext.FunctionName);
+        }
+
+        [FunctionName("MDSProcessor-Article")]
+        public async Task ProcessArticleAsync([TimerTrigger("%ProcessorRunScheduleExpression%")] TimerInfo myTimer,
+                                   ExecutionContext funcContext,
+                                   ILogger logger)
+        {
+            await ProcessMessages(logger,
+                                  _config.ServiceBusTopic_MDS,
+                                  _config.ServiceBusTopicSubscription_Article,
+                                  funcContext.FunctionName);
+        }
+
+        private async Task ProcessMessages(ILogger logger, string topicName, string topicSubscriptionName, string processName)
+        {
+            List<Task> sessionTasks = [];
+
+            // Accept sessions and process them concurrently
+            for (int i = 0; i < _config.MaxConcurrentSessions; i++)
             {
-                using (var gzipStream = new GZipStream(outputStream, CompressionMode.Compress))
+                CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMilliseconds(_config.MaxWaitTimeForMessagesInMilliSeconds));
+                ServiceBusSessionReceiverOptions sessionReceiverOptions = new() { PrefetchCount = _config.MaxMessagesToProcessPerRun };
+                ServiceBusSessionReceiver sessionReceiver;
+                try
                 {
-                    gzipStream.Write(jsonBytes, 0, jsonBytes.Length);
+                    sessionReceiver = await _sbClient.AcceptNextSessionAsync(topicName,
+                                                                            topicSubscriptionName,
+                                                                            sessionReceiverOptions,
+                                                                            cancellationTokenSource.Token);
                 }
+                catch (TaskCanceledException) { break; } // No sessions available
 
-                // Get the compressed bytes
-                byte[] compressedBytes = outputStream.ToArray();
+                if (sessionReceiver == null) break; // No more sessions available
 
-                // Encode the compressed bytes to base64
-                string base64String = Convert.ToBase64String(compressedBytes);
-                return base64String;
+                try
+                {
+                    sessionTasks.Add(_processorService.ProcessSessionAsync(sessionReceiver,
+                                                                           logger,
+                                                                           _config.DatabricksWorkflowJobId_Ingest,
+                                                                           _config.DatabricksWorkflowJobStatusPollingMaxWait_Seconds_Ingest,
+                                                                           processName)); // Start processing in parallel
+                }
+                catch
+                {
+                    if (!sessionReceiver.IsClosed)
+                        await sessionReceiver.CloseAsync();
+                }
             }
+
+            if (sessionTasks.Count > 0)
+            {
+                await Task.WhenAll(sessionTasks); // Wait for all sessions to complete
+                logger.LogInformation($"{processName} - {sessionTasks.Count} sessions processed.");
+            }
+
+            logger.LogInformation($"{processName} - No sessions found.");
         }
     }
 }
