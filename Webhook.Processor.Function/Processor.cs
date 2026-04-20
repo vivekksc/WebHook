@@ -97,47 +97,85 @@ namespace Webhook.Processor.Function
 
         private async Task ProcessMessages(ILogger logger, string topicName, string topicSubscriptionName, string processName)
         {
-            List<Task> sessionTasks = [];
-
-            // Accept sessions and process them concurrently
-            for (int i = 0; i < _config.MaxConcurrentSessions; i++)
+            // Build session processor options to mirror previous concurrency/prefetch behavior
+            var options = new ServiceBusSessionProcessorOptions
             {
-                CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMilliseconds(_config.MaxWaitTimeForMessagesInMilliSeconds));
-                ServiceBusSessionReceiverOptions sessionReceiverOptions = new() { PrefetchCount = _config.MaxMessagesToProcessPerRun };
-                ServiceBusSessionReceiver sessionReceiver;
+                MaxConcurrentSessions = _config.MaxConcurrentSessions,
+                MaxConcurrentCallsPerSession = _config.MaxMessagesToProcessPerRun,
+                PrefetchCount = _config.MaxMessagesToProcessPerRun,
+                AutoCompleteMessages = false,
+                // keep an auto-renewal window that covers expected processing + polling time
+                MaxAutoLockRenewalDuration = TimeSpan.FromMilliseconds(_config.MaxWaitTimeForMessagesInMilliSeconds)
+                                            + TimeSpan.FromSeconds(_config.DatabricksWorkflowJobStatusPollingMaxWait_Seconds_Ingest)
+            };
+
+            await using var processor = _sbClient.CreateSessionProcessor(topicName, topicSubscriptionName, options);
+
+            processor.ProcessMessageAsync += async args =>
+            {
+                var message = args.Message;
+                logger.LogInformation($"{processName} - Processing message {message.MessageId} in Session {args.SessionId}");
+
                 try
                 {
-                    sessionReceiver = await _sbClient.AcceptNextSessionAsync(topicName,
-                                                                            topicSubscriptionName,
-                                                                            sessionReceiverOptions,
-                                                                            cancellationTokenSource.Token);
+                    // Call existing service logic (unchanged). Pass the event cancellation token so service can react if needed.
+                    await _processor_service.ProcessMessageAsync(
+                        message,
+                        logger,
+                        _config.DatabricksWorkflowJobId_Ingest,
+                        _config.DatabricksWorkflowJobStatusPollingMaxWait_Seconds_Ingest,
+                        processName,
+                        args.CancellationToken);
+
+                    // Explicit completion to maintain same semantics as before
+                    await args.CompleteMessageAsync(message);
+                    logger.LogInformation($"{processName} - Completed message {message.MessageId} in Session {args.SessionId}");
                 }
-                catch (TaskCanceledException) { break; } // No sessions available
+                catch (Exception ex)
+                {
+                    logger.LogError($"{processName} - Error processing message {message.MessageId} in Session {args.SessionId}: {ex.Message}");
+                    try
+                    {
+                        await args.AbandonMessageAsync(message);
+                        logger.LogInformation($"{processName} - Abandoned message {message.MessageId} in Session {args.SessionId}");
+                    }
+                    catch (Exception abandonEx)
+                    {
+                        logger.LogWarning($"{processName} - Failed to abandon message {message.MessageId}: {abandonEx.Message}");
+                    }
+                }
+            };
 
-                if (sessionReceiver == null) break; // No more sessions available
+            processor.ProcessErrorAsync += args =>
+            {
+                logger.LogError(args.Exception, $"{processName} - ServiceBus error (Entity: {args.EntityPath}, Namespace: {args.FullyQualifiedNamespace})");
+                return Task.CompletedTask;
+            };
 
+            // Run processor for the same time-window previously used to AcceptNextSession
+            var runTimeout = TimeSpan.FromMilliseconds(_config.MaxWaitTimeForMessagesInMilliSeconds);
+            using var cts = new CancellationTokenSource(runTimeout);
+
+            try
+            {
+                await processor.StartProcessingAsync(cts.Token);
+                logger.LogInformation($"{processName} - Session processor started for subscription '{topicSubscriptionName}' (running for {runTimeout}).");
+
+                // Wait until timeout elapses (or cancellation)
                 try
                 {
-                    sessionTasks.Add(_processorService.ProcessSessionAsync(sessionReceiver,
-                                                                           logger,
-                                                                           _config.DatabricksWorkflowJobId_Ingest,
-                                                                           _config.DatabricksWorkflowJobStatusPollingMaxWait_Seconds_Ingest,
-                                                                           processName)); // Start processing in parallel
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cts.Token);
                 }
-                catch
-                {
-                    if (!sessionReceiver.IsClosed)
-                        await sessionReceiver.CloseAsync();
-                }
-            }
+                catch (TaskCanceledException) { /* expected on timeout */ }
 
-            if (sessionTasks.Count > 0)
+                // Stop processing and allow running handlers to complete
+                await processor.StopProcessingAsync();
+                logger.LogInformation($"{processName} - Session processor stopped for subscription '{topicSubscriptionName}'.");
+            }
+            catch (Exception ex)
             {
-                await Task.WhenAll(sessionTasks); // Wait for all sessions to complete
-                logger.LogInformation($"{processName} - {sessionTasks.Count} sessions processed.");
+                logger.LogError(ex, $"{processName} - Failed to start/stop session processor for subscription '{topicSubscriptionName}'.");
             }
-
-            logger.LogInformation($"{processName} - No sessions found.");
         }
     }
 }

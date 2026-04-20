@@ -57,11 +57,13 @@ namespace Webhook.Utilities.Services
             await sessionReceiver.CloseAsync(); // Close session receiver after processing
         }
 
+        // Added optional CancellationToken parameter so callers (session processor) can pass handler cancellation tokens.
         public async Task ProcessMessageAsync(ServiceBusReceivedMessage message,
                                               ILogger logger,
                                               string databricksJobId,
                                               int databricksJobStatusPollingMaxWaitSeconds,
-                                              string processorName)
+                                              string processorName,
+                                              CancellationToken cancellationToken = default)
         {
             using MemoryStream eventPayloadStream = new(message.Body.ToArray());
             string eventEntity = message.Subject;
@@ -102,7 +104,7 @@ namespace Webhook.Utilities.Services
                 if (isRunIdFound)
                     await WaitForJobCompletionAsync(logger, dbxJobRunId, databricksJobStatusPollingMaxWaitSeconds, processorName);
                 else
-                    await Task.Delay(TimeSpan.FromSeconds(databricksJobStatusPollingMaxWaitSeconds));
+                    await Task.Delay(TimeSpan.FromSeconds(databricksJobStatusPollingMaxWaitSeconds), cancellationToken);
 
                 //var deleteResponse = await DeleteBlobAsync(blobName);
                 //logger.LogInformation($"{processorName} - {logDetail}, PayloadBlobDeleteStatus: {deleteResponse.ReasonPhrase}");
@@ -154,7 +156,7 @@ namespace Webhook.Utilities.Services
                     else
                     {
                         logger.LogInformation($"{processorName} - Waiting for job {jobRunId} (status: {jobStatus}) to finish...");
-                        await Task.Delay(TimeSpan.FromSeconds(_config.DatabricksWorkflowJobStatusPollingDelay_Seconds));
+                        await Task.Delay(TimeSpan.FromSeconds(_config.DatabricksWorkflowJobStatusPollingDelay_Seconds), cancellationToken: CancellationToken.None);
                     }
                 }
                 catch (Exception ex)
