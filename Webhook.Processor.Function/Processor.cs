@@ -2,15 +2,7 @@ using Azure.Messaging.ServiceBus;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
 using System;
-using System.Collections.Generic;
-using System.IO;
-using System.IO.Compression;
-using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Text;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Webhook.Utilities.Contracts;
@@ -97,13 +89,12 @@ namespace Webhook.Processor.Function
 
         private async Task ProcessMessages(ILogger logger, string topicName, string topicSubscriptionName, string processName)
         {
-            // Build session processor options to mirror previous concurrency/prefetch behavior
             var options = new ServiceBusSessionProcessorOptions
             {
                 MaxConcurrentSessions = _config.MaxConcurrentSessions,
                 MaxConcurrentCallsPerSession = _config.MaxMessagesToProcessPerRun,
                 PrefetchCount = _config.MaxMessagesToProcessPerRun,
-                AutoCompleteMessages = false,
+                AutoCompleteMessages = false,   
                 // keep an auto-renewal window that covers expected processing + polling time
                 MaxAutoLockRenewalDuration = TimeSpan.FromMilliseconds(_config.MaxWaitTimeForMessagesInMilliSeconds)
                                             + TimeSpan.FromSeconds(_config.DatabricksWorkflowJobStatusPollingMaxWait_Seconds_Ingest)
@@ -118,8 +109,7 @@ namespace Webhook.Processor.Function
 
                 try
                 {
-                    // Call existing service logic (unchanged). Pass the event cancellation token so service can react if needed.
-                    await _processor_service.ProcessMessageAsync(
+                    await processorService.ProcessMessageAsync(
                         message,
                         logger,
                         _config.DatabricksWorkflowJobId_Ingest,
@@ -127,7 +117,6 @@ namespace Webhook.Processor.Function
                         processName,
                         args.CancellationToken);
 
-                    // Explicit completion to maintain same semantics as before
                     await args.CompleteMessageAsync(message);
                     logger.LogInformation($"{processName} - Completed message {message.MessageId} in Session {args.SessionId}");
                 }
@@ -152,7 +141,7 @@ namespace Webhook.Processor.Function
                 return Task.CompletedTask;
             };
 
-            // Run processor for the same time-window previously used to AcceptNextSession
+            // Run processor
             var runTimeout = TimeSpan.FromMilliseconds(_config.MaxWaitTimeForMessagesInMilliSeconds);
             using var cts = new CancellationTokenSource(runTimeout);
 
