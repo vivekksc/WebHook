@@ -102,7 +102,7 @@ namespace Webhook.Utilities.Services
                 JsonDocument responseJson = JsonDocument.Parse(responseContent);
                 var isRunIdFound = responseJson.RootElement.GetProperty("run_id").TryGetInt64(out long dbxJobRunId);
                 if (isRunIdFound)
-                    await WaitForJobCompletionAsync(logger, dbxJobRunId, databricksJobStatusPollingMaxWaitSeconds, processorName);
+                    await WaitForJobCompletionAsync(logger, dbxJobRunId, databricksJobStatusPollingMaxWaitSeconds, processorName, cancellationToken);
                 else
                     await Task.Delay(TimeSpan.FromSeconds(databricksJobStatusPollingMaxWaitSeconds), cancellationToken);
 
@@ -117,12 +117,15 @@ namespace Webhook.Utilities.Services
             }
         }
 
+        // Updated to use the newer Databricks run-get endpoint and to evaluate status via status.state and status.termination_details
         public async Task<bool> WaitForJobCompletionAsync(ILogger logger,
                                                           long jobRunId,
                                                           int jobStatusPollingMaxWaitSeconds,
-                                                          string processorName)
+                                                          string processorName,
+                                                          CancellationToken cancellationToken = default)
         {
-            string url = $"https://{_config.DatabricksInstance}/api/2.1/jobs/runs/get?run_id={jobRunId}";
+            // Newer endpoint (per request): adjust path to use workspace/jobs/getrun
+            string url = $"https://{_config.DatabricksInstance}/api/2.2/jobs/runs/get?run_id={jobRunId}";
             httpClient.DefaultRequestHeaders.Clear();
             httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _config.DatabricksAccessToken);
 
@@ -133,37 +136,68 @@ namespace Webhook.Utilities.Services
             {
                 try
                 {
-                    HttpResponseMessage response = await httpClient.GetAsync(url);
+                    HttpResponseMessage response = await httpClient.GetAsync(url, cancellationToken);
                     response.EnsureSuccessStatusCode(); // Throw exception if not 2XX
 
-                    string responseBody = await response.Content.ReadAsStringAsync();
+                    string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
                     logger.LogInformation(responseBody);
-                    JsonDocument json = JsonDocument.Parse(responseBody);
-                    string jobStatus = json.RootElement.GetProperty("state")
-                                          .GetProperty("life_cycle_state")
-                                          .GetString();
 
+                    using JsonDocument json = JsonDocument.Parse(responseBody);
+                    var root = json.RootElement;
 
-                    if (jobStatus == "TERMINATED" || jobStatus == "INTERNAL_ERROR")
+                    // Navigate to the status object
+                    if (!root.TryGetProperty("status", out JsonElement jobStatus))
                     {
-                        throw new Exception($"{processorName} - Job {jobRunId} {jobStatus}. Details - {responseBody}");
+                        // If not exists, log and wait then retry
+                        logger.LogInformation($"{processorName} - No status element found in job run response. Retrying...");
+                        await Task.Delay(TimeSpan.FromSeconds(_config.DatabricksWorkflowJobStatusPollingDelay_Seconds), cancellationToken);
+                        continue;
                     }
-                    else if (jobStatus == "SUCCESS")
+
+                    string jobState = jobStatus.TryGetProperty("state", out JsonElement state) ? state.GetString() : null;
+
+                    // termination_details may be absent until TERMINATED
+                    string? termCode = default;
+                    string? termType = default;
+                    if (jobStatus.TryGetProperty("termination_details", out JsonElement termEl) && termEl.ValueKind == JsonValueKind.Object)
                     {
-                        logger.LogInformation($"{processorName} - Job {jobRunId} completed.");
-                        return true;
+                        if (termEl.TryGetProperty("code", out JsonElement jobStatusTerminationDetailsCode) && jobStatusTerminationDetailsCode.ValueKind != JsonValueKind.Null)
+                            termCode = jobStatusTerminationDetailsCode.GetString();
+
+                        if (termEl.TryGetProperty("type", out JsonElement jobStatusTerminationDetailsType) && jobStatusTerminationDetailsType.ValueKind != JsonValueKind.Null)
+                            termType = jobStatusTerminationDetailsType.GetString();
+                    }
+
+                    // Decide based on status.state and termination_details.code/type
+                    if (string.Equals(jobState, "TERMINATED", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // If termination details indicate success, return true; otherwise throw
+                        if ((!string.IsNullOrWhiteSpace(termCode) && termCode.Equals("SUCCESS", StringComparison.OrdinalIgnoreCase))
+                            || (!string.IsNullOrWhiteSpace(termType) && termType.Equals("SUCCESS", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            logger.LogInformation($"{processorName} - Job {jobRunId} terminated with SUCCESS.");
+                            return true;
+                        }
+
+                        // Not a successful termination
+                        throw new Exception($"{processorName} - Job {jobRunId} terminated with code:{termCode ?? string.Empty} type:{termType ?? string.Empty}. Details - {responseBody}");
                     }
                     else
                     {
-                        logger.LogInformation($"{processorName} - Waiting for job {jobRunId} (status: {jobStatus}) to finish...");
-                        await Task.Delay(TimeSpan.FromSeconds(_config.DatabricksWorkflowJobStatusPollingDelay_Seconds), cancellationToken: CancellationToken.None);
+                        // Job still running or in other progress state
+                        logger.LogInformation($"{processorName} - Waiting for job {jobRunId} (status: {jobState}) to finish...");
+                        await Task.Delay(TimeSpan.FromSeconds(_config.DatabricksWorkflowJobStatusPollingDelay_Seconds), cancellationToken);
                     }
                 }
-                catch (Exception ex)
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
+                    logger.LogWarning($"{processorName} - Job status polling cancelled for job {jobRunId}.");
                     throw;
-                    //logger.LogError($"{processorName} - Error checking job status: {ex.Message}");
-                    //await Task.Delay(TimeSpan.FromSeconds(_config.DatabricksWorkflowJobStatusPollingDelay_Seconds)); // Wait before retrying
+                }
+                catch (Exception)
+                {
+                    // Surfacing exceptions to caller
+                    throw;
                 }
             }
 
