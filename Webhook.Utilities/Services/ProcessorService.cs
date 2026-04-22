@@ -124,7 +124,6 @@ namespace Webhook.Utilities.Services
                                                           string processorName,
                                                           CancellationToken cancellationToken = default)
         {
-            // Newer endpoint (per request): adjust path to use workspace/jobs/getrun
             string url = $"https://{_config.DatabricksInstance}/api/2.2/jobs/runs/get?run_id={jobRunId}";
             httpClient.DefaultRequestHeaders.Clear();
             httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _config.DatabricksAccessToken);
@@ -157,30 +156,30 @@ namespace Webhook.Utilities.Services
                     string jobState = jobStatus.TryGetProperty("state", out JsonElement state) ? state.GetString() : null;
 
                     // termination_details may be absent until TERMINATED
-                    string? termCode = default;
-                    string? termType = default;
+                    string? jobStatusTerminationDetailsCode = default;
+                    string? jobStatusTerminationDetailsType = default;
                     if (jobStatus.TryGetProperty("termination_details", out JsonElement termEl) && termEl.ValueKind == JsonValueKind.Object)
                     {
-                        if (termEl.TryGetProperty("code", out JsonElement jobStatusTerminationDetailsCode) && jobStatusTerminationDetailsCode.ValueKind != JsonValueKind.Null)
-                            termCode = jobStatusTerminationDetailsCode.GetString();
+                        if (termEl.TryGetProperty("code", out JsonElement jobStatusCode) && jobStatusCode.ValueKind != JsonValueKind.Null)
+                            jobStatusTerminationDetailsCode = jobStatusCode.GetString();
 
-                        if (termEl.TryGetProperty("type", out JsonElement jobStatusTerminationDetailsType) && jobStatusTerminationDetailsType.ValueKind != JsonValueKind.Null)
-                            termType = jobStatusTerminationDetailsType.GetString();
+                        if (termEl.TryGetProperty("type", out JsonElement jobStatusType) && jobStatusType.ValueKind != JsonValueKind.Null)
+                            jobStatusTerminationDetailsType = jobStatusType.GetString();
                     }
 
                     // Decide based on status.state and termination_details.code/type
                     if (string.Equals(jobState, "TERMINATED", StringComparison.OrdinalIgnoreCase))
                     {
                         // If termination details indicate success, return true; otherwise throw
-                        if ((!string.IsNullOrWhiteSpace(termCode) && termCode.Equals("SUCCESS", StringComparison.OrdinalIgnoreCase))
-                            || (!string.IsNullOrWhiteSpace(termType) && termType.Equals("SUCCESS", StringComparison.OrdinalIgnoreCase)))
+                        if ((!string.IsNullOrWhiteSpace(jobStatusTerminationDetailsCode) && jobStatusTerminationDetailsCode.Equals("SUCCESS", StringComparison.OrdinalIgnoreCase))
+                            || (!string.IsNullOrWhiteSpace(jobStatusTerminationDetailsType) && jobStatusTerminationDetailsType.Equals("SUCCESS", StringComparison.OrdinalIgnoreCase)))
                         {
                             logger.LogInformation($"{processorName} - Job {jobRunId} terminated with SUCCESS.");
                             return true;
                         }
 
                         // Not a successful termination
-                        throw new Exception($"{processorName} - Job {jobRunId} terminated with code:{termCode ?? string.Empty} type:{termType ?? string.Empty}. Details - {responseBody}");
+                        throw new Exception($"{processorName} - Job {jobRunId} terminated with code:{jobStatusTerminationDetailsCode ?? string.Empty} type:{jobStatusTerminationDetailsType ?? string.Empty}. Details - {responseBody}");
                     }
                     else
                     {
